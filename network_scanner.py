@@ -37,7 +37,7 @@ def send_alert(message):
 
 # Database and config paths
 DB_PATH = Path(__file__).parent / "network_devices.db"
-DEFAULT_SCAN_RANGE = "10.0.2.0/24"
+DEFAULT_SCAN_RANGE = "192.168.1.0/24"
 
 
 def init_db():
