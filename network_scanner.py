@@ -360,6 +360,38 @@ def show_scan_history(conn, limit=10):
             range_str, count, scanned_str))
 
 
+
+def show_scan_diff(conn, limit=10):
+    """Compare device states between scans."""
+    cursor = conn.cursor()
+    
+    # Get last 2 scan times
+    cursor.execute("SELECT id, scanned_at FROM scan_history ORDER BY scanned_at DESC LIMIT 2")
+    scans = cursor.fetchall()
+    if len(scans) < 2:
+        print("Need at least 2 scans")
+        return
+    
+    scan1_time = scans[1][1]  # Older scan
+    scan2_time = scans[0][1]  # Newer scan
+    
+    # Get IPs that appeared after scan1_time (new)
+    cursor.execute("SELECT ip_address, hostname FROM devices WHERE last_seen > ?", (scan1_time,))
+    new = [(r[0], r[1]) for r in cursor.fetchall() if r[0]]
+    
+    # Get IPs that were last seen before scan1_time (gone from view)
+    cursor.execute("SELECT ip_address, hostname FROM devices WHERE last_seen <= ?", (scan1_time,))
+    gone = [(r[0], r[1]) for r in cursor.fetchall() if r[0]]
+    
+    print(f"Comparing last scan ({scan1_time}) vs current state:")
+    print(f"\n+ New/Recently seen ({len(new)}):")
+    for ip, host in sorted(new)[:limit]:
+        print(f"  + {ip} {host or ''}")
+    print(f"\n- Not seen since last scan ({len(gone)}):")
+    for ip, host in sorted(gone)[:limit]:
+        print(f"  - {ip} {host or ''}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Home Network Scanner Bot - Discover and track network devices"
@@ -403,6 +435,8 @@ def main():
     
     # Scan history command
     subparsers.add_parser("scans", help="Show scan history")
+    diff_parser = subparsers.add_parser("diff", help="Compare scans")
+    diff_parser.add_argument("--limit", "-l", type=int, default=10)
     
     args = parser.parse_args()
     
@@ -442,7 +476,10 @@ def main():
         
     elif args.command == "scans":
         show_scan_history(conn)
-        
+
+    elif args.command == "diff":
+        show_scan_diff(conn, args.limit)
+
     else:
         # Default: show help and list devices
         parser.print_help()
