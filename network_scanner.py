@@ -336,7 +336,7 @@ def show_scan_history(conn, limit=10):
     cursor = conn.cursor()
     
     cursor.execute("""
-        SELECT scan_range, devices_found, scanned_at
+        SELECT id, scan_range, devices_found, scanned_at
         FROM scan_history
         ORDER BY scanned_at DESC
         LIMIT ?
@@ -348,12 +348,12 @@ def show_scan_history(conn, limit=10):
         print("No scan history found.")
         return
     
-    print("\n{:20} {:15} {:20}".format(
-        "Scan Range", "Devices Found", "Scanned At"))
+    print("\n{:5} {:20} {:12} {:20}".format(
+        "ID", "Scan Range", "Found", "Scanned At"))
     print("-" * 60)
     
     for scan in scans:
-        range_str, count, scanned_at = scan
+        scan_id, range_str, count, scanned_at = scan
         scanned_str = datetime.fromisoformat(scanned_at).strftime("%Y-%m-%d %H:%M:%S")
         
         print("{:20} {:15} {:20}".format(
@@ -361,19 +361,28 @@ def show_scan_history(conn, limit=10):
 
 
 
-def show_scan_diff(conn, limit=10):
-    """Compare device states between scans."""
+def show_scan_diff(conn, scan1_id=None, scan2_id=None, limit=10):
+    """Compare two specific scans."""
     cursor = conn.cursor()
     
-    # Get last 2 scan times
-    cursor.execute("SELECT id, scanned_at FROM scan_history ORDER BY scanned_at DESC LIMIT 2")
-    scans = cursor.fetchall()
-    if len(scans) < 2:
-        print("Need at least 2 scans")
-        return
+    # Get scans
+    if scan1_id and scan2_id:
+        cursor.execute("SELECT id, scanned_at FROM scan_history WHERE id IN (?, ?)", (scan1_id, scan2_id))
+        scans = cursor.fetchall()
+        if len(scans) < 2:
+            print("Scan IDs not found")
+            return
+    else:
+        cursor.execute("SELECT id, scanned_at FROM scan_history ORDER BY scanned_at DESC LIMIT 2")
+        scans = cursor.fetchall()
+        if len(scans) < 2:
+            print("Need at least 2 scans")
+            return
+        scan1_id = scans[1][0]
+        scan2_id = scans[0][0]
     
-    scan1_time = scans[1][1]  # Older scan
-    scan2_time = scans[0][1]  # Newer scan
+    scan1_time = next(s[1] for s in scans if s[0] == scan1_id)
+    scan2_time = next(s[1] for s in scans if s[0] == scan2_id)
     
     # Get IPs that appeared after scan1_time (new)
     cursor.execute("SELECT ip_address, hostname FROM devices WHERE last_seen > ?", (scan1_time,))
@@ -436,6 +445,8 @@ def main():
     # Scan history command
     subparsers.add_parser("scans", help="Show scan history")
     diff_parser = subparsers.add_parser("diff", help="Compare scans")
+    diff_parser.add_argument("--scan1", type=int, help="First scan ID")
+    diff_parser.add_argument("--scan2", type=int, help="Second scan ID")
     diff_parser.add_argument("--limit", "-l", type=int, default=10)
     
     args = parser.parse_args()
@@ -478,7 +489,7 @@ def main():
         show_scan_history(conn)
 
     elif args.command == "diff":
-        show_scan_diff(conn, args.limit)
+        show_scan_diff(conn, args.scan1, args.scan2, args.limit)
 
     else:
         # Default: show help and list devices
